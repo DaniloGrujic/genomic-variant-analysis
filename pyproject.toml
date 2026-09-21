@@ -29,5 +29,8 @@ dev = [
     "pre-commit (>=4.6.2,<5.0.0)"
 ]
 
+[tool.poetry]
+package-mode = false
+
 [tool.ruff.lint]
 ignore = ["B008"]
