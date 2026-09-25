@@ -44,6 +44,11 @@ jobs:
       - name: Format check
         run: poetry run ruff format --check .
 
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/variant_api_test
+        run: poetry run alembic upgrade head
+
       - name: Tests
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/variant_api_test
