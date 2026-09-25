@@ -46,7 +46,7 @@ jobs:
 
       - name: Run database migrations
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/variant_api_test
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/variant_api_test
         run: poetry run alembic upgrade head
 
       - name: Tests
