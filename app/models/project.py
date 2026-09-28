@@ -1,9 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.annotation_file import AnnotationFile
+    from app.models.vcf_file import VCFFile
 
 
 class Project(Base):
@@ -35,4 +40,14 @@ class Project(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    vcf_files: Mapped[list["VCFFile"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+    annotation_files: Mapped[list["AnnotationFile"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
