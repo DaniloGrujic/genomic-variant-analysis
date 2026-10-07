@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes.analysis import router as analysis_router
 from app.api.routes.projects import router as projects_router
 from app.db.session import engine
 
@@ -20,6 +21,7 @@ app = FastAPI(
 )
 
 app.include_router(projects_router)
+app.include_router(analysis_router)
 
 
 @app.get("/health")

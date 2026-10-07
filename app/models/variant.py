@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.annotation import Annotation
     from app.models.vcf_file import VCFFile
 
 
@@ -37,6 +38,11 @@ class Variant(Base):
         nullable=True,
     )
 
+    quality: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
     reference: Mapped[str] = mapped_column(
         String(1000),
         nullable=False,
@@ -54,4 +60,10 @@ class Variant(Base):
 
     vcf_file: Mapped["VCFFile"] = relationship(
         back_populates="variants",
+    )
+
+    annotation: Mapped["Annotation | None"] = relationship(
+        back_populates="variant",
+        cascade="all, delete-orphan",
+        uselist=False,
     )

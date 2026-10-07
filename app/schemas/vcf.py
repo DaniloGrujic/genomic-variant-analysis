@@ -9,6 +9,7 @@ class VariantResponse(BaseModel):
     chromosome: str
     position: int
     variant_id: str | None
+    quality: float | None
     reference: str
     alternate: str
     allele_frequency: float | None
