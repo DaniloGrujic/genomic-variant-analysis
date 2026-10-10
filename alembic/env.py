@@ -14,9 +14,16 @@ config = context.config
 database_url = os.getenv("DATABASE_URL")
 
 if database_url:
+    # Alembic uses a synchronous engine, so replace the async driver.
+    migration_url = database_url.replace(
+        "postgresql+asyncpg://",
+        "postgresql+psycopg2://",
+        1,
+    )
+
     config.set_main_option(
         "sqlalchemy.url",
-        database_url.replace("%", "%%"),
+        migration_url.replace("%", "%%"),
     )
 
 # Interpret the config file for Python logging.

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes.analysis import router as analysis_router
 from app.api.routes.projects import router as projects_router
 from app.db.session import engine
 
@@ -17,11 +18,16 @@ app = FastAPI(
     description="API for managing genomic variant analysis projects",
     version="0.1.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "operationsSorter": "none",
+        "tagsSorter": "none",
+    },
 )
 
 app.include_router(projects_router)
+app.include_router(analysis_router)
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "ok"}

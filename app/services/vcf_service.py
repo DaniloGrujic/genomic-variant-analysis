@@ -87,6 +87,7 @@ async def upload_vcf(
                 variant_id = None if fields[2] == "." else fields[2]
                 reference = fields[3]
                 alternate = fields[4]
+                quality = None if fields[5] == "." else float(fields[5])
                 info = fields[7]
 
                 allele_frequency = _parse_af(info)
@@ -96,6 +97,7 @@ async def upload_vcf(
                         chromosome=chromosome,
                         position=position,
                         variant_id=variant_id,
+                        quality=quality,
                         reference=reference,
                         alternate=alternate,
                         allele_frequency=allele_frequency,

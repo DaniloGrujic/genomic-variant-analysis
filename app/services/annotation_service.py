@@ -65,6 +65,50 @@ def _validate_annotation_file(file_path: Path) -> int:
     return valid_entries
 
 
+def parse_annotation_entries(file_path: Path) -> list[dict]:
+    entries = []
+
+    with file_path.open("r", encoding="utf-8") as annotation_file:
+        annotation_file.readline()
+
+        for line in annotation_file:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            fields = line.split("\t")
+
+            if len(fields) != len(EXPECTED_COLUMNS):
+                continue
+
+            if not all(field.strip() for field in fields):
+                continue
+
+            chromosome = fields[7]
+
+            if chromosome.lower().startswith("chr"):
+                chromosome = chromosome[3:]
+
+            try:
+                position = int(fields[8])
+            except ValueError:
+                continue
+
+            entries.append(
+                {
+                    "chromosome": chromosome,
+                    "position": position,
+                    "reference": fields[10],
+                    "alternate": fields[11],
+                    "gene_name": fields[4],
+                    "clinical_significance": fields[5],
+                }
+            )
+
+    return entries
+
+
 async def upload_annotation(
     db: AsyncSession,
     project_id: int,
