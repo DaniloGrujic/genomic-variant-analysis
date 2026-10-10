@@ -18,12 +18,16 @@ app = FastAPI(
     description="API for managing genomic variant analysis projects",
     version="0.1.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "operationsSorter": "none",
+        "tagsSorter": "none",
+    },
 )
 
 app.include_router(projects_router)
 app.include_router(analysis_router)
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "ok"}

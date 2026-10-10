@@ -17,7 +17,7 @@ from app.services.analysis_service import (
 
 router = APIRouter(
     prefix="/analysis",
-    tags=["analysis"],
+    tags=["Analysis"],
 )
 
 
