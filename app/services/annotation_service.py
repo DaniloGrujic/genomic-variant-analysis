@@ -1,12 +1,21 @@
+import logging
+import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.annotation_file import AnnotationFile
+from app.models.pending_storage_deletion import PendingStorageDeletion
+from app.services.storage_service import (
+    StorageError,
+    generate_storage_key,
+    storage_service,
+)
 
-UPLOAD_DIR = Path("uploads/annotation")
+logger = logging.getLogger(__name__)
 
 EXPECTED_COLUMNS = [
     "#VariantID",
@@ -122,35 +131,60 @@ async def upload_annotation(
             detail="Only .txt or .tsv annotation files are allowed.",
         )
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    file_path = UPLOAD_DIR / filename
-
     content = await file.read()
-    file_path.write_bytes(content)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".tsv",
+        delete=False,
+    ) as temp_file:
+        temp_file.write(content)
+        file_path = Path(temp_file.name)
 
     try:
         entry_count = _validate_annotation_file(file_path)
 
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        file_path.unlink(missing_ok=True)
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid annotation file: {exc}",
         ) from exc
 
+    finally:
+        file_path.unlink(missing_ok=True)
+
+    key = generate_storage_key(
+        "annotation",
+        project_id,
+        filename,
+    )
+
+    storage_reference = await storage_service.save(key, content)
+
     annotation_file = AnnotationFile(
         project_id=project_id,
         filename=filename,
-        file_path=str(file_path),
+        file_path=storage_reference,
         file_size=len(content),
         entry_count=entry_count,
     )
 
-    db.add(annotation_file)
+    try:
+        db.add(annotation_file)
+        await db.commit()
 
-    await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+
+        try:
+            await storage_service.delete(storage_reference)
+        except StorageError:
+            logger.exception(
+                "Failed to clean up uploaded file after database error: %s",
+                storage_reference,
+            )
+
+        raise
+
     await db.refresh(annotation_file)
 
     return annotation_file
@@ -184,12 +218,22 @@ async def delete_annotation_file(
     if annotation_file is None:
         return False
 
-    file_path = Path(annotation_file.file_path)
+    storage_reference = annotation_file.file_path
 
-    if file_path.exists():
-        file_path.unlink()
+    # Persist the cleanup job in the same transaction
+    # that removes the annotation metadata.
+    db.add(
+        PendingStorageDeletion(
+            storage_reference=storage_reference,
+        )
+    )
 
-    await db.delete(annotation_file)
-    await db.commit()
+    try:
+        await db.delete(annotation_file)
+        await db.commit()
+
+    except SQLAlchemyError:
+        await db.rollback()
+        raise
 
     return True

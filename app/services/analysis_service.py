@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 from statistics import mean, median
 
@@ -10,6 +11,7 @@ from app.models.annotation_file import AnnotationFile
 from app.models.variant import Variant
 from app.models.vcf_file import VCFFile
 from app.services.annotation_service import parse_annotation_entries
+from app.services.storage_service import storage_service
 
 
 def _normalize_chromosome(chromosome: str) -> str:
@@ -47,7 +49,19 @@ async def annotate_variants(
             detail="Annotation file not found for this project.",
         )
 
-    entries = parse_annotation_entries(Path(annotation_file.file_path))
+    content = await storage_service.read(annotation_file.file_path)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".tsv",
+        delete=False,
+    ) as temp_file:
+        temp_file.write(content)
+        temp_path = Path(temp_file.name)
+
+    try:
+        entries = parse_annotation_entries(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
     annotation_lookup = {
         (
