@@ -1,15 +1,24 @@
 import gzip
+import logging
+import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.pending_storage_deletion import PendingStorageDeletion
 from app.models.variant import Variant
 from app.models.vcf_file import VCFFile
+from app.services.storage_service import (
+    StorageError,
+    generate_storage_key,
+    storage_service,
+)
 
-UPLOAD_DIR = Path("uploads/vcf")
+logger = logging.getLogger(__name__)
 
 
 def _open_vcf_file(file_path: Path):
@@ -48,12 +57,14 @@ async def upload_vcf(
             detail="Only .vcf and .vcf.gz files are allowed.",
         )
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    file_path = UPLOAD_DIR / filename
-
     content = await file.read()
-    file_path.write_bytes(content)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".vcf.gz" if filename.lower().endswith(".gz") else ".vcf",
+        delete=False,
+    ) as temp_file:
+        temp_file.write(content)
+        file_path = Path(temp_file.name)
 
     variants = []
 
@@ -105,29 +116,48 @@ async def upload_vcf(
                 )
 
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        file_path.unlink(missing_ok=True)
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid VCF file: {exc}",
         ) from exc
 
+    finally:
+        file_path.unlink(missing_ok=True)
+
+    key = generate_storage_key("vcf", project_id, filename)
+    storage_reference = await storage_service.save(key, content)
+
     vcf_file = VCFFile(
         project_id=project_id,
         filename=filename,
-        file_path=str(file_path),
+        file_path=storage_reference,
         file_size=len(content),
         variant_count=len(variants),
     )
 
-    db.add(vcf_file)
-    await db.flush()
+    try:
+        db.add(vcf_file)
+        await db.flush()
 
-    for variant in variants:
-        variant.vcf_file_id = vcf_file.id
-        db.add(variant)
+        for variant in variants:
+            variant.vcf_file_id = vcf_file.id
+            db.add(variant)
 
-    await db.commit()
+        await db.commit()
+
+    except SQLAlchemyError:
+        await db.rollback()
+
+        try:
+            await storage_service.delete(storage_reference)
+        except StorageError:
+            logger.exception(
+                "Failed to clean up uploaded file after database error: %s",
+                storage_reference,
+            )
+
+        raise
+
     await db.refresh(vcf_file)
 
     return vcf_file
@@ -173,12 +203,20 @@ async def delete_vcf_file(
     if vcf_file is None:
         return False
 
-    file_path = Path(vcf_file.file_path)
+    storage_reference = vcf_file.file_path
 
-    if file_path.exists():
-        file_path.unlink()
+    # Queue storage deletion and remove VCF metadata atomically.
+    db.add(
+        PendingStorageDeletion(
+            storage_reference=storage_reference,
+        )
+    )
 
-    await db.delete(vcf_file)
-    await db.commit()
+    try:
+        await db.delete(vcf_file)
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise
 
     return True
